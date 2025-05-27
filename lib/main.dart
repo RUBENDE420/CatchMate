@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:catchmate/pages/auth_router.dart';
-
+import 'package:catchmate/pages/home_page.dart'; // <-- Import hinzugefügt
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +21,11 @@ class CatchMateApp extends StatelessWidget {
       title: 'CatchMate',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(),
-      home: const AuthRouter(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const AuthRouter(),
+        '/home': (context) => const HomePage(), // <-- Route hinzugefügt
+      },
     );
   }
 }
