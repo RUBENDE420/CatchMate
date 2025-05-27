@@ -1,7 +1,8 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'register_page.dart';
+import 'home_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -11,75 +12,131 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final emailController = TextEditingController();
+  final identifierController = TextEditingController();
   final passwordController = TextEditingController();
+  bool isLoading = false;
   String? error;
 
   Future<void> login() async {
-    setState(() => error = null);
+    setState(() {
+      isLoading = true;
+      error = null;
+    });
+
+    final identifier = identifierController.text.trim();
+    final password = passwordController.text.trim();
+
+    if (identifier.isEmpty || password.isEmpty) {
+      setState(() {
+        error = 'Bitte alle Felder ausfüllen';
+        isLoading = false;
+      });
+      return;
+    }
+
     try {
+      String emailToUse = identifier;
+
+      if (!identifier.contains('@')) {
+        final userQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .where('username', isEqualTo: identifier)
+            .limit(1)
+            .get();
+
+        if (userQuery.docs.isEmpty) {
+          setState(() {
+            error = 'Benutzername nicht gefunden';
+            isLoading = false;
+          });
+          return;
+        }
+
+        emailToUse = userQuery.docs.first['email'];
+      }
+
       await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
+        email: emailToUse,
+        password: password,
       );
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomePage()),
+        );
+      }
     } on FirebaseAuthException catch (e) {
-      setState(() => error = e.message);
+      setState(() {
+        error = e.message ?? 'Fehler beim Login';
+      });
+    } catch (e) {
+      setState(() {
+        error = 'Unbekannter Fehler';
+      });
+    } finally {
+      setState(() => isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32.0),
+        padding: const EdgeInsets.all(24),
         child: Center(
           child: SingleChildScrollView(
             child: Column(
               children: [
-                const Text(
-                  "CatchMate Login",
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
+                const Text('Login',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 32),
                 TextField(
-                  controller: emailController,
+                  controller: identifierController,
                   decoration: const InputDecoration(
-                    labelText: 'E-Mail',
-                    labelStyle: TextStyle(color: Colors.white70),
+                    labelText: 'Benutzername oder E-Mail',
                     border: OutlineInputBorder(),
                   ),
-                  style: const TextStyle(color: Colors.white),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: passwordController,
+                  obscureText: true,
                   decoration: const InputDecoration(
                     labelText: 'Passwort',
-                    labelStyle: TextStyle(color: Colors.white70),
                     border: OutlineInputBorder(),
                   ),
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white),
                 ),
                 const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: login,
-                  child: const Text("Einloggen"),
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(error!, style: const TextStyle(color: Colors.red)),
-                ],
+                if (isLoading)
+                  const CircularProgressIndicator()
+                else
+                  ElevatedButton(
+                    onPressed: login,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 40, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
+                    ),
+                    child: const Text('Login'),
+                  ),
                 const SizedBox(height: 16),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const RegisterPage(),
-                    ));
+                if (error != null)
+                  Text(error!,
+                      style: const TextStyle(color: Colors.red, fontSize: 14)),
+                const SizedBox(height: 24),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RegisterPage()),
+                    );
                   },
-                  child: const Text("Noch kein Konto? Jetzt registrieren", style: TextStyle(color: Colors.white70)),
-                )
+                  child: const Text(
+                    'Noch keinen Account? Jetzt registrieren',
+                    style: TextStyle(
+                        decoration: TextDecoration.underline, fontSize: 14),
+                  ),
+                ),
               ],
             ),
           ),
