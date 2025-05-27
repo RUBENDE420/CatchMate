@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "962387224093",
+    "project_id": "catchmate-e6801",
+    "storage_bucket": "catchmate-e6801.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:962387224093:android:e3208cf74bb460c622c8f4",
+        "android_client_info": {
+          "package_name": "de.catchmate.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnLKs4zaJh6DcmjRT7EYK-vxjwGOdSTUo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
