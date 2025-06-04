@@ -18,7 +18,8 @@ class UploadPage extends StatefulWidget {
 class _UploadPageState extends State<UploadPage> {
   final fishTypeController = TextEditingController();
   final weightController = TextEditingController();
-  final methodController = TextEditingController();
+  final lengthController = TextEditingController();
+  final techniqueController = TextEditingController();
   final baitController = TextEditingController();
 
   File? imageFile;
@@ -38,7 +39,8 @@ class _UploadPageState extends State<UploadPage> {
 
     final fishType = fishTypeController.text.trim();
     final weight = weightController.text.trim();
-    final method = methodController.text.trim();
+    final length = lengthController.text.trim();
+    final technique = techniqueController.text.trim();
     final bait = baitController.text.trim();
 
     if (imageFile == null || fishType.isEmpty) {
@@ -59,16 +61,26 @@ class _UploadPageState extends State<UploadPage> {
       await ref.putFile(imageFile!);
       final imageUrl = await ref.getDownloadURL();
 
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final username = userDoc.data()?['username'] as String? ?? '';
+
       final position = await Geolocator.getCurrentPosition();
 
       final data = {
         'userId': uid,
+        'username': username,
         'imageUrl': imageUrl,
         'fishType': fishType,
         'weight': weight.isNotEmpty ? double.tryParse(weight) : null,
-        'method': method,
+        'length': length.isNotEmpty ? double.tryParse(length) : null,
+        'technique': technique,
         'bait': bait,
         'timestamp': FieldValue.serverTimestamp(),
+        'likes': 0,
+        'comments': 0,
         'location': {
           'lat': position.latitude,
           'lng': position.longitude,
@@ -117,12 +129,17 @@ class _UploadPageState extends State<UploadPage> {
               TextField(
                 controller: weightController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Gewicht (optional in KG)'),
+                decoration: const InputDecoration(labelText: 'Gewicht (optional in KG)'),
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: methodController,
+                controller: lengthController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Länge (optional in cm)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: techniqueController,
                 decoration: const InputDecoration(labelText: 'Angeltechnik (z.B. Spinnfischen)'),
               ),
               const SizedBox(height: 12),

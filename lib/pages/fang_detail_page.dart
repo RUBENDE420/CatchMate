@@ -32,8 +32,10 @@ class FangDetailPage extends StatelessWidget {
                 _buildInfoTile("Fischart", data['fishType']),
                 if (data['weight'] != null)
                   _buildInfoTile("Gewicht", "${data['weight']} kg"),
-                if (data['method'] != null)
-                  _buildInfoTile("Angeltechnik", data['method']),
+                if (data['length'] != null)
+                  _buildInfoTile("Länge", "${data['length']} cm"),
+                if (data['technique'] != null)
+                  _buildInfoTile("Angeltechnik", data['technique']),
                 if (data['bait'] != null)
                   _buildInfoTile("Köder", data['bait']),
                 if (data['timestamp'] != null)
