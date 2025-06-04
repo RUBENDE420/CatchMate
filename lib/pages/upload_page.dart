@@ -1,12 +1,10 @@
 import 'dart:io';
+import 'package:catchmate/pages/fang_detail_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
-import 'package:geolocator/geolocator.dart';
-import 'fang_detail_page.dart';
 
 class UploadPage extends StatefulWidget {
   const UploadPage({super.key});
@@ -16,135 +14,122 @@ class UploadPage extends StatefulWidget {
 }
 
 class _UploadPageState extends State<UploadPage> {
-  final fishTypeController = TextEditingController();
-  final weightController = TextEditingController();
-  final methodController = TextEditingController();
-  final baitController = TextEditingController();
+  File? _image;
+  final picker = ImagePicker();
 
-  File? imageFile;
-  bool isLoading = false;
-  String? error;
+  final _fishTypeController = TextEditingController();
+  final _baitController = TextEditingController();
+  final _techniqueController = TextEditingController();
+  final _weightController = TextEditingController();
+  final _lengthController = TextEditingController();
+  final _locationController = TextEditingController();
 
-  Future<void> pickImage() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() => imageFile = File(picked.path));
+  bool _isUploading = false;
+  String? _error;
+
+  Future pickImage() async {
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+      });
     }
   }
 
   Future<void> uploadCatch() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final fishType = fishTypeController.text.trim();
-    final weight = weightController.text.trim();
-    final method = methodController.text.trim();
-    final bait = baitController.text.trim();
-
-    if (imageFile == null || fishType.isEmpty) {
-      setState(() => error = "Bitte Bild und Fischart angeben");
+    if (_image == null) {
+      setState(() {
+        _error = "Bitte ein Bild auswählen.";
+      });
       return;
     }
 
     setState(() {
-      isLoading = true;
-      error = null;
+      _isUploading = true;
+      _error = null;
     });
 
     try {
-      final uid = user.uid;
-      final catchId = FirebaseFirestore.instance.collection('catches').doc().id;
-      final ref = FirebaseStorage.instance.ref().child('catches/$uid/$catchId.jpg');
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception("Nicht eingeloggt");
 
-      await ref.putFile(imageFile!);
-      final imageUrl = await ref.getDownloadURL();
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child("catches/${user.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg");
 
-      final position = await Geolocator.getCurrentPosition();
+      await storageRef.putFile(_image!);
+      final imageUrl = await storageRef.getDownloadURL();
 
-      final data = {
-        'userId': uid,
+      final newCatch = await FirebaseFirestore.instance.collection('catches').add({
+        'userId': user.uid,
+        'username': user.displayName ?? user.email,
         'imageUrl': imageUrl,
-        'fishType': fishType,
-        'weight': weight.isNotEmpty ? double.tryParse(weight) : null,
-        'method': method,
-        'bait': bait,
-        'timestamp': FieldValue.serverTimestamp(),
-        'location': {
-          'lat': position.latitude,
-          'lng': position.longitude,
-        }
-      };
-
-      await FirebaseFirestore.instance.collection('catches').doc(catchId).set(data);
+        'fishType': _fishTypeController.text,
+        'bait': _baitController.text,
+        'technique': _techniqueController.text,
+        'weight': double.tryParse(_weightController.text) ?? 0,
+        'length': double.tryParse(_lengthController.text) ?? 0,
+        'location': _locationController.text,
+        'timestamp': Timestamp.now(),
+        'likes': 0,
+        'comments': 0,
+      });
 
       if (mounted) {
-        Navigator.of(context).pushReplacement(
+        Navigator.push(
+          context,
           MaterialPageRoute(
-            builder: (_) => FangDetailPage(catchId: catchId),
+            builder: (context) => FangDetailPage(catchId: newCatch.id),
           ),
         );
       }
     } catch (e) {
-      setState(() => error = "Fehler beim Hochladen");
+      setState(() {
+        _error = "Fehler beim Hochladen: $e";
+      });
     } finally {
-      setState(() => isLoading = false);
+      setState(() {
+        _isUploading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Fang hochladen')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              if (imageFile != null)
-                Image.file(imageFile!, height: 180)
-              else
-                TextButton.icon(
-                  icon: const Icon(Icons.image),
-                  label: const Text("Bild auswählen"),
-                  onPressed: pickImage,
-                ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: fishTypeController,
-                decoration: const InputDecoration(labelText: 'Fischart'),
+      appBar: AppBar(title: const Text("Fang hochladen")),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GestureDetector(
+              onTap: pickImage,
+              child: Container(
+                height: 200,
+                color: Colors.grey[800],
+                child: _image == null
+                    ? const Center(child: Icon(Icons.image, size: 50))
+                    : Image.file(_image!, fit: BoxFit.cover),
               ),
+            ),
+            const SizedBox(height: 16),
+            TextField(controller: _fishTypeController, decoration: const InputDecoration(labelText: "Fischart")),
+            TextField(controller: _baitController, decoration: const InputDecoration(labelText: "Köder")),
+            TextField(controller: _techniqueController, decoration: const InputDecoration(labelText: "Technik")),
+            TextField(controller: _weightController, decoration: const InputDecoration(labelText: "Gewicht (kg)"), keyboardType: TextInputType.number),
+            TextField(controller: _lengthController, decoration: const InputDecoration(labelText: "Länge (cm)"), keyboardType: TextInputType.number),
+            TextField(controller: _locationController, decoration: const InputDecoration(labelText: "Ort")),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _isUploading ? null : uploadCatch,
+              child: _isUploading ? const CircularProgressIndicator() : const Text("Fang hochladen"),
+            ),
+            if (_error != null) ...[
               const SizedBox(height: 12),
-              TextField(
-                controller: weightController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                    labelText: 'Gewicht (optional in KG)'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: methodController,
-                decoration: const InputDecoration(labelText: 'Angeltechnik (z.B. Spinnfischen)'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: baitController,
-                decoration: const InputDecoration(labelText: 'Köder (z.B. Wobbler, Made...)'),
-              ),
-              const SizedBox(height: 24),
-              if (isLoading)
-                const CircularProgressIndicator()
-              else
-                ElevatedButton(
-                  onPressed: uploadCatch,
-                  child: const Text("Fang hochladen"),
-                ),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(error!, style: const TextStyle(color: Colors.red)),
-                )
-            ],
-          ),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ]
+          ],
         ),
       ),
     );

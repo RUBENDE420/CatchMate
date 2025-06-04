@@ -1,4 +1,6 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'fang_detail_page.dart';
 
 class FeedPage extends StatelessWidget {
   const FeedPage({super.key});
@@ -6,57 +8,78 @@ class FeedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Fänge'),
-      ),
-      body: ListView.builder(
-        itemCount: 10, // Später mit Firestore-Daten ersetzen
-        itemBuilder: (context, index) => Card(
-          margin: const EdgeInsets.all(10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 4,
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: const [
-                    CircleAvatar(radius: 20, backgroundImage: AssetImage('assets/user.png')),
-                    SizedBox(width: 10),
-                    Text('Benutzername', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(12),
+      appBar: AppBar(title: const Text("Fänge")),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('catches')
+            .orderBy('timestamp', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('Fehler beim Laden des Feeds'));
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final docs = snapshot.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return const Center(child: Text('Noch keine Fänge vorhanden'));
+          }
+
+          return ListView.builder(
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final data = docs[index];
+              final catchId = data.id;
+              return Card(
+                margin: const EdgeInsets.all(12),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => FangDetailPage(catchId: catchId),
+                      ),
+                    );
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      data['imageUrl'] != null
+                          ? Image.network(data['imageUrl'], fit: BoxFit.cover, height: 200, width: double.infinity)
+                          : const SizedBox.shrink(),
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(data['fishType'] ?? '-', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text("${data['length']} cm • ${data['weight']} kg"),
+                            Text("${data['location']} • ${(data['timestamp'] as Timestamp).toDate().toLocal().toString().split(' ').first}"),  
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.favorite_border, size: 20),
+                                const SizedBox(width: 4),
+                                Text('${data['likes'] ?? 0} Likes'),
+                                const SizedBox(width: 16),
+                                const Icon(Icons.comment, size: 20),
+                                const SizedBox(width: 4),
+                                Text('${data['comments'] ?? 0} Kommentare'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Center(child: Icon(Icons.image, size: 60)),
                 ),
-                const SizedBox(height: 10),
-                const Text('Hecht • 94 cm • 6,2 kg'),
-                const SizedBox(height: 6),
-                const Text('Veluwemeer, 24.05.2025'),
-                const SizedBox(height: 10),
-                Row(
-                  children: const [
-                    Icon(Icons.favorite_border),
-                    SizedBox(width: 8),
-                    Text('24 Likes'),
-                    Spacer(),
-                    Icon(Icons.comment),
-                    SizedBox(width: 8),
-                    Text('5 Kommentare'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+              );
+            },
+          );
+        },
       ),
     );
   }
