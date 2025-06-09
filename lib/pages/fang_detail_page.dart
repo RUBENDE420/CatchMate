@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 class FangDetailPage extends StatefulWidget {
   final String catchId;
-
   const FangDetailPage({super.key, required this.catchId});
 
   @override
@@ -12,114 +11,220 @@ class FangDetailPage extends StatefulWidget {
 }
 
 class _FangDetailPageState extends State<FangDetailPage> {
-  DocumentSnapshot? catchData;
-  bool isLoading = true;
-  String? error;
-  bool isOwner = false;
+  final TextEditingController _commentController = TextEditingController();
+  bool _isSending = false;
+  bool _sent = false;
 
-  @override
-  void initState() {
-    super.initState();
-    fetchCatch();
+  Future<void> _addComment(String text) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || text.trim().isEmpty) return;
+
+    setState(() {
+      _isSending = true;
+      _sent = false;
+    });
+
+    final commentRef = FirebaseFirestore.instance
+        .collection('catches')
+        .doc(widget.catchId)
+        .collection('comments')
+        .doc();
+
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final username = userDoc.data()?['username'] ?? user.email;
+
+    await commentRef.set({
+      'userId': user.uid,
+      'username': username,
+      'text': text.trim(),
+      'timestamp': Timestamp.now(),
+      'likes': 0,
+      'likedBy': [],
+    });
+
+    await _handleXP(user.uid);
+
+    _commentController.clear();
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isSending = false;
+      _sent = true;
+    });
+
+    await Future.delayed(const Duration(seconds: 2));
+    setState(() => _sent = false);
   }
 
-  Future<void> fetchCatch() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('catches')
-          .doc(widget.catchId)
-          .get();
+  Future<void> _handleXP(String uid) async {
+    final now = DateTime.now();
+    final todayStart = Timestamp.fromDate(DateTime(now.year, now.month, now.day));
 
-      if (!doc.exists) {
-        setState(() {
-          error = "Fang nicht gefunden.";
-          isLoading = false;
+    final commentToday = await FirebaseFirestore.instance
+        .collection('catches')
+        .doc(widget.catchId)
+        .collection('comments')
+        .where('userId', isEqualTo: uid)
+        .where('timestamp', isGreaterThan: todayStart)
+        .get();
+
+    if (commentToday.size <= 10) {
+      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(userRef);
+        final xp = snapshot['xp'] ?? 0;
+        final level = snapshot['level'] ?? 1;
+        final newXP = xp + 2;
+
+        int newLevel = level;
+        int requiredXP = (100 * level).toInt();
+        if (newXP >= requiredXP) {
+          newLevel++;
+        }
+
+        transaction.update(userRef, {
+          'xp': newXP,
+          'level': newLevel,
         });
-        return;
-      }
-
-      final currentUid = FirebaseAuth.instance.currentUser?.uid;
-      setState(() {
-        catchData = doc;
-        isOwner = doc['userId'] == currentUid;
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        error = "Fehler beim Laden: $e";
-        isLoading = false;
       });
     }
   }
 
-  Future<void> deleteCatch() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Fang löschen'),
-        content: const Text('Möchtest du diesen Fang wirklich löschen?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Abbrechen')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Löschen')),
-        ],
-      ),
-    );
+  Future<void> _toggleCommentLike(String commentId, List likedBy, bool hasLiked) async {
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+    final ref = FirebaseFirestore.instance
+        .collection('catches')
+        .doc(widget.catchId)
+        .collection('comments')
+        .doc(commentId);
 
-    if (confirm == true) {
-      await FirebaseFirestore.instance
-          .collection('catches')
-          .doc(widget.catchId)
-          .delete();
-      if (mounted) Navigator.pop(context);
-    }
+    await ref.update({
+      'likedBy': hasLiked ? FieldValue.arrayRemove([userId]) : FieldValue.arrayUnion([userId]),
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+    final catchRef = FirebaseFirestore.instance.collection('catches').doc(widget.catchId);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Fang-Details"),
-        actions: isOwner
-            ? [
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: deleteCatch,
-                )
-              ]
-            : null,
+        title: const Text("Fangdetails"),
+        actions: [
+          StreamBuilder<DocumentSnapshot>(
+            stream: catchRef.snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox();
+              final data = snapshot.data!.data() as Map<String, dynamic>;
+              if (data['userId'] != userId) return const SizedBox();
+              return IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: () async {
+                  await catchRef.delete();
+                  Navigator.pop(context);
+                },
+              );
+            },
+          )
+        ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Center(child: Text(error!, style: const TextStyle(color: Colors.red)))
-              : catchData == null
-                  ? const Center(child: Text("Keine Daten verfügbar"))
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Image.network(
-                            catchData!['imageUrl'] ?? '',
-                            height: 250,
-                            fit: BoxFit.cover,
-                          ),
-                          const SizedBox(height: 16),
-                          Text("Fischart: ${catchData!['fishType'] ?? '-'}", style: const TextStyle(fontSize: 18)),
-                          Text("Köder: ${catchData!['bait'] ?? '-'}"),
-                          Text("Technik: ${catchData!['technique'] ?? '-'}"),
-                          Text("Gewicht: ${catchData!['weight'] ?? '-'} kg"),
-                          Text("Länge: ${catchData!['length'] ?? '-'} cm"),
-                          Text("Ort: ${catchData!['location'] ?? '-'}"),
-                          Text(
-                            "Datum: ${catchData!['timestamp'] != null ? (catchData!['timestamp'] as Timestamp).toDate().toLocal().toString().split(' ').first : '-'}",
-                          ),
-                          const SizedBox(height: 12),
-                          Text("Likes: ${catchData!['likes'] ?? 0}"),
-                          Text("Kommentare: ${catchData!['comments'] ?? 0}"),
-                        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: catchRef.snapshots(),
+                builder: (context, snap) {
+                  if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                  final data = snap.data!.data() as Map<String, dynamic>;
+
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Image.network(data['imageUrl'], fit: BoxFit.cover),
+                      const SizedBox(height: 12),
+                      Text("Fischart: ${data['fishType'] ?? ''}"),
+                      Text("Köder: ${data['bait'] ?? ''}"),
+                      Text("Technik: ${data['technique'] ?? ''}"),
+                      Text("Gewicht: ${data['weight']} kg"),
+                      Text("Länge: ${data['length']} cm"),
+                      Text("Ort: ${data['location']}"),
+                      Text("Von: ${data['username']}"),
+                      const SizedBox(height: 16),
+                      const Text("Kommentare", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: catchRef.collection('comments').orderBy('timestamp', descending: true).snapshots(),
+                        builder: (context, commentSnap) {
+                          if (!commentSnap.hasData) return const CircularProgressIndicator();
+                          final comments = commentSnap.data!.docs;
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: comments.map((doc) {
+                              final c = doc.data() as Map<String, dynamic>;
+                              final time = (c['timestamp'] as Timestamp).toDate();
+                              final likedBy = List<String>.from(c['likedBy'] ?? []);
+                              final hasLiked = likedBy.contains(userId);
+                              return ListTile(
+                                title: Text(c['username'] ?? ''),
+                                subtitle: Text(c['text'] ?? ''),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text("${likedBy.length}"),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.favorite,
+                                        color: hasLiked ? Colors.red : Colors.grey,
+                                      ),
+                                      onPressed: () => _toggleCommentLike(doc.id, likedBy, hasLiked),
+                                    ),
+                                    Text("${time.hour}:${time.minute.toString().padLeft(2, '0')}")
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        },
                       ),
+                      const SizedBox(height: 90),
+                    ],
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _commentController,
+                      decoration: const InputDecoration(hintText: "Kommentieren..."),
                     ),
+                  ),
+                  if (_isSending)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: CircularProgressIndicator(),
+                    )
+                  else if (_sent)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.check, color: Colors.green),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.send),
+                      onPressed: () => _addComment(_commentController.text),
+                    ),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
     );
   }
 }

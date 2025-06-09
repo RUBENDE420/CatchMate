@@ -44,6 +44,15 @@ class _ProfilePageState extends State<ProfilePage> {
 
   int _calculateLevelTarget(int level) => 100 * level;
 
+  Future<bool> _hasLiked(String catchId) async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final doc = await FirebaseFirestore.instance.collection("catches").doc(catchId).get();
+    final data = doc.data();
+    if (data == null || !data.containsKey("likedBy")) return false;
+    final likedBy = List<String>.from(data["likedBy"]);
+    return likedBy.contains(uid);
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser!.uid;
@@ -149,22 +158,38 @@ class _ProfilePageState extends State<ProfilePage> {
                       itemBuilder: (context, index) {
                         final doc = catches[index];
                         final data = doc.data() as Map<String, dynamic>;
-                        return AspectRatio(
-                          aspectRatio: 1,
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => FangDetailPage(catchId: doc.id),
+                        final imageUrl = data["imageUrl"] ?? '';
+                        final catchId = doc.id;
+
+                        return FutureBuilder<bool>(
+                          future: _hasLiked(catchId),
+                          builder: (context, likeSnap) {
+                            final liked = likeSnap.data ?? false;
+
+                            return Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => FangDetailPage(catchId: catchId),
+                                        ),
+                                      );
+                                    },
+                                    child: Image.network(imageUrl, fit: BoxFit.cover),
+                                  ),
                                 ),
-                              );
-                            },
-                            child: Image.network(
-                              data['imageUrl'] ?? '',
-                              fit: BoxFit.cover,
-                            ),
-                          ),
+                                if (liked)
+                                  const Positioned(
+                                    top: 6,
+                                    right: 6,
+                                    child: Icon(Icons.favorite, color: Colors.red, size: 20),
+                                  ),
+                              ],
+                            );
+                          },
                         );
                       },
                     );
